@@ -422,6 +422,7 @@ function renderAll() {
     renderGoals();
     renderHud();
     renderPreview();
+    renderQuickCurrent();
     syncFormHints();
 }
 
@@ -625,6 +626,43 @@ function fillForm(goal) {
     document.querySelector('#pw-add-box')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
+/**
+ * 统一的新建目标入口：设置面板表单与魔棒快捷弹窗共用。
+ * 只负责写入 state，不负责保存与重绘（调用方自己 persist + refresh）。
+ */
+function createGoal(values) {
+    const st = state();
+    if (!st) {
+        toast('还没有打开聊天', 'warning');
+        return null;
+    }
+    const cur = currentFloor();
+    const title = String(values.title || '').trim();
+    if (!title) {
+        toast('至少写一个标题', 'warning');
+        return null;
+    }
+    const n = Number(values.targetFloor);
+    const targetFloor = Number.isFinite(n) && n > 0
+        ? Math.round(n)
+        : cur + Math.max(1, Number(cfg().defaultSpan) || 40);
+    const goal = normalizeGoal({
+        title,
+        desc: values.desc,
+        targetFloor: Math.max(cur + 1, targetFloor),
+        startFloor: cur,
+        keywords: values.keywords,
+        must: values.must,
+        avoid: values.avoid,
+        notes: values.notes,
+        status: 'active',
+    });
+    st.goals.push(goal);
+    const head = currentGoal(st);
+    if (!head || (goal.targetFloor || 0) < (head.targetFloor || 0)) st.activeId = goal.id;
+    return goal;
+}
+
 function saveForm() {
     const st = state();
     if (!st) {
@@ -655,20 +693,15 @@ function saveForm() {
         }
         editingId = null;
     } else {
-        const goal = normalizeGoal({
+        createGoal({
             title,
             desc: $('#pw-desc').val(),
-            targetFloor: Math.max(cur + 1, targetFloor),
-            startFloor: cur,
+            targetFloor,
             keywords: $('#pw-keywords').val(),
             must: $('#pw-must').val(),
             avoid: $('#pw-avoid').val(),
             notes: $('#pw-notes').val(),
-            status: 'active',
         });
-        st.goals.push(goal);
-        const head = currentGoal(st);
-        if (!head || (goal.targetFloor || 0) < (head.targetFloor || 0)) st.activeId = goal.id;
     }
 
     persist();
@@ -1001,6 +1034,172 @@ function registerSlash() {
 /* 初始化                                                              */
 /* ================================================================== */
 
+/* ================================================================== */
+/* 魔棒快捷入口 + 快捷弹窗                                             */
+/* ================================================================== */
+
+function ensureWandItem() {
+    if (document.getElementById('pw_wand_item')) return true;
+    const menu = document.getElementById('extensionsMenu');
+    if (!menu) return false;
+    const holder = document.createElement('div');
+    holder.className = 'extension_container';
+    holder.innerHTML = '<div id="pw_wand_item" class="list-group-item flex-container flexGap5" role="button" tabindex="0">'
+        + '<div class="fa-solid fa-clapperboard extensionsMenuExtensionButton"></div>'
+        + '<span>伏笔导演</span></div>';
+    const item = holder.firstElementChild;
+    menu.appendChild(holder);
+    item.addEventListener('click', () => openQuick());
+    item.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openQuick();
+        }
+    });
+    return true;
+}
+
+function scheduleWandItem(retries = 40) {
+    if (ensureWandItem()) return;
+    if (retries <= 0) {
+        console.warn('[PlotWeaver] 找不到 #extensionsMenu，魔棒入口未挂载');
+        return;
+    }
+    setTimeout(() => scheduleWandItem(retries - 1), 500);
+}
+
+function ensureQuick() {
+    if ($('#pw-quick').length) return;
+    const holder = document.createElement('div');
+    holder.innerHTML = `
+        <div id="pw-quick" class="pw-quick" style="display:none" role="dialog" aria-label="伏笔导演快捷面板">
+            <div class="pw-quick-box">
+                <div class="pw-quick-head">
+                    <span class="pw-quick-title"><i class="fa-solid fa-clapperboard"></i> 伏笔导演</span>
+                    <span class="pw-quick-x" title="关闭">✕</span>
+                </div>
+                <div id="pw-quick-current" class="pw-quick-current"></div>
+                <div class="pw-quick-label">加一个「未来一定会发生、但现在不要演完」的剧情点</div>
+                <input id="pw-q-title" class="text_pole pw-quick-input" type="text" placeholder="例：主角发现父亲藏起来的秘密" />
+                <div class="pw-quick-row">
+                    <input id="pw-q-target" class="text_pole pw-quick-input" type="number" min="1" placeholder="目标楼（留空=当前楼+40）" />
+                    <input id="pw-q-keywords" class="text_pole pw-quick-input" type="text" placeholder="关键词，逗号分隔" />
+                </div>
+                <textarea id="pw-q-desc" class="text_pole pw-quick-input" rows="2" placeholder="具体要发生什么（可选）"></textarea>
+                <div class="pw-quick-actions">
+                    <button class="pw-btn menu_button" data-quick="add">加为目标</button>
+                    <button class="pw-btn menu_button" data-quick="settings">打开完整设置</button>
+                </div>
+                <div class="pw-quick-tip">进度与目标存在当前聊天的元数据里，换聊天互不影响。</div>
+            </div>
+        </div>`;
+    document.body.appendChild(holder.firstElementChild);
+}
+
+function renderQuickCurrent() {
+    const el = $('#pw-quick-current');
+    if (!el.length) return;
+    const st = state();
+    if (!st) {
+        el.html('<div class="pw-empty">还没有打开聊天。</div>');
+        return;
+    }
+    const goal = currentGoal(st);
+    if (!goal) {
+        el.html('<div class="pw-empty">当前聊天还没有目标，下面写一个就会开始铺垫。</div>');
+        return;
+    }
+    const floor = currentFloor();
+    const ev = evalStage(goal, floor);
+    const remainText = ev.remain > 0 ? `还剩 ${ev.remain} 楼` : `已超 ${-ev.remain} 楼`;
+    el.html(`
+        <div class="pw-card">
+            <div class="pw-card-head">
+                <span class="pw-card-title">${esc(goal.title)}</span>
+                <span class="pw-stage pw-stage-${ev.key}">${ev.name}</span>
+            </div>
+            <div class="pw-bar"><div class="pw-bar-fill pw-fill-${ev.key}" style="width:${ev.percent}%"></div></div>
+            <div class="pw-meta">第 ${floor} 楼 / 目标 ${goal.targetFloor} 楼 · ${remainText} · ${ev.percent}%</div>
+        </div>`);
+}
+
+function openQuick() {
+    ensureQuick();
+    const box = $('#pw-quick');
+    if (!box.length) return;
+    renderQuickCurrent();
+    box.css('display', 'flex');
+    setTimeout(() => $('#pw-q-title').trigger('focus'), 30);
+}
+
+function closeQuick() {
+    $('#pw-quick').hide();
+}
+
+function openFullPanel() {
+    closeQuick();
+    const content = document.getElementById('rm_extensions_block');
+    const drawer = document.getElementById('extensions-settings-button');
+    if (content && content.classList.contains('closedDrawer')) {
+        const toggle = drawer ? drawer.querySelector('.drawer-toggle') : null;
+        if (toggle) toggle.click();
+    }
+    setTimeout(() => {
+        // 本插件自己的折叠面板默认可能是收起的，先展开再定位
+        const root = document.querySelector('.plot-weaver-settings');
+        const inner = root ? root.querySelector('.inline-drawer') : null;
+        const innerContent = inner ? inner.querySelector('.inline-drawer-content') : null;
+        const collapsed = !innerContent || getComputedStyle(innerContent).display === 'none';
+        if (collapsed && inner) {
+            const innerToggle = inner.querySelector('.inline-drawer-toggle');
+            if (innerToggle) innerToggle.click();
+        }
+        setTimeout(() => {
+            const target = document.getElementById('pw-current') || document.getElementById('pw-add-box');
+            if (!target) return;
+            target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            target.classList.add('pw-flash');
+            setTimeout(() => target.classList.remove('pw-flash'), 1200);
+        }, 200);
+    }, 200);
+}
+
+function submitQuick() {
+    const created = createGoal({
+        title: $('#pw-q-title').val(),
+        desc: $('#pw-q-desc').val(),
+        targetFloor: $('#pw-q-target').val(),
+        keywords: $('#pw-q-keywords').val(),
+    });
+    if (!created) return;
+    $('#pw-q-title').val('');
+    $('#pw-q-target').val('');
+    $('#pw-q-keywords').val('');
+    $('#pw-q-desc').val('');
+    persist();
+    refresh();
+    toast(`已加为目标：${clip(created.title, 20)}`, 'success');
+}
+
+function bindQuick() {
+    $(document).on('click', '[data-quick]', function (e) {
+        e.preventDefault();
+        const action = this.dataset.quick;
+        if (action === 'add') submitQuick();
+        else if (action === 'settings') openFullPanel();
+    });
+    $(document).on('click', '#pw-quick .pw-quick-x', (e) => {
+        e.stopPropagation();
+        closeQuick();
+    });
+    $(document).on('click', '#pw-quick', function (e) {
+        if (e.target === this) closeQuick();
+    });
+    $(document).on('keydown.pwquick', (e) => {
+        if (e.key === 'Escape' && $('#pw-quick').is(':visible')) closeQuick();
+    });
+}
+
 function ensureHud() {
     if ($('#pw-hud-bar').length) return;
     $('body').append('<div id="pw-hud-bar" class="pw-hud" style="display:none"></div>');
@@ -1044,11 +1243,13 @@ async function init() {
     ensureHud();
     bindSettings();
     bindUi();
+    bindQuick();
     bindEvents();
     registerSlash();
     resetForm();
     applyPrompt(buildInjection());
     renderAll();
+    scheduleWandItem();
     console.log('[伏笔导演] 已加载');
 }
 
