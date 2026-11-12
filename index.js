@@ -39,6 +39,7 @@ const DEFAULT_SETTINGS = {
     position: 'in_chat',
     depth: 4,
     counting: 'all',
+    floorOffset: 0,
     strictness: 'normal',
     hintNext: true,
     scanSeeds: true,
@@ -189,19 +190,36 @@ function toKeywords(v) {
 /* 楼层与进度                                                          */
 /* ================================================================== */
 
-function currentFloor() {
+function floorStats() {
     const chat = ctx().chat || [];
-    const mode = cfg().counting;
-    let all = 0;
+    let total = 0;
+    let sys = 0;
     let ai = 0;
     for (const m of chat) {
-        if (!m || m.is_system) continue;
-        all += 1;
-        if (!m.is_user) ai += 1;
+        if (!m) continue;
+        total += 1;
+        if (m.is_system) sys += 1;
+        else if (!m.is_user) ai += 1;
     }
-    if (mode === 'ai') return ai;
-    if (mode === 'round') return Math.ceil(all / 2);
-    return all;
+    return { total, sys, dialog: total - sys, ai };
+}
+
+/**
+ * 当前楼层。
+ *
+ * 以前这里会跳过 is_system 的消息，但 ST 的 /hide 隐藏楼层、系统消息
+ * 在聊天数组里仍然占位置（楼层管理器也把它们算进"共 N 层"），
+ * 跳过之后楼层数会明显偏小，所以默认改成"聊天里有几条消息就是几楼"。
+ *
+ * floorOffset 用于对齐个人编号习惯：楼层管理器从 0 开始数，就填 -1。
+ */
+function currentFloor() {
+    const s = floorStats();
+    const mode = cfg().counting || 'all';
+    let n = s.total;
+    if (mode === 'ai') n = s.ai;
+    else if (mode === 'dialog' || mode === 'round') n = s.dialog;
+    return Math.max(0, n + (Number(cfg().floorOffset) || 0));
 }
 
 function evalStage(goal, floor) {
@@ -813,6 +831,7 @@ function bindSettings() {
     bindValue('#pw-position', 'position');
     bindValue('#pw-depth', 'depth', 'number');
     bindValue('#pw-counting', 'counting');
+    bindValue('#pw-floor-offset', 'floorOffset', 'number');
     bindValue('#pw-strictness', 'strictness');
     bindValue('#pw-defaultspan', 'defaultSpan', 'number');
     bindValue('#pw-extra', 'extra');
