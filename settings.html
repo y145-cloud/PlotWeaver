@@ -2,7 +2,7 @@
     <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
             <b>伏笔导演</b>
-            <span class="pw-version">v0.2.6</span>
+            <span class="pw-version">v0.2.7</span>
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
@@ -114,6 +114,15 @@
                                 <option value="all">每条消息算一楼（含隐藏/系统）</option>
                                 <option value="dialog">只看可见对话（排除隐藏楼层）</option>
                                 <option value="ai">只算 AI 回复</option>
+                            </select>
+                        </div>
+                    <div class="pw-row">
+                        <div class="pw-col">
+                            <label for="pw-curve">阶段推进曲线</label>
+                            <select id="pw-curve" class="text_pole" title="决定同一跨度内，多久才进入下一个阶段">
+                                <option value="normal">标准（线性，1% 楼就 1% 进度）</option>
+                                <option value="slow">缓慢（默认，前半段几乎不动）</option>
+                                <option value="verySlow">极慢（大跨度用）</option>
                             </select>
                         </div>
                         <div class="pw-col">

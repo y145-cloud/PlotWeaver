@@ -45,6 +45,7 @@ const DEFAULT_SETTINGS = {
     counting: 'all',
     floorOffset: 0,
     strictness: 'normal',
+    curve: 'slow',
     hintNext: true,
     scanSeeds: true,
     seedChars: 80,
@@ -52,6 +53,9 @@ const DEFAULT_SETTINGS = {
     extra: '',
     defaultSpan: 40,
 };
+
+/* 阶段曲线：把“已走比例”压成“阶段进度”，让前半段几乎不动 */
+const CURVE_EXP = { normal: 1, slow: 1.6, verySlow: 2.2 };
 
 const STAGE_TABLE = [
     { key: 'seed', limit: 0.15, name: '起念期' },
@@ -234,9 +238,11 @@ function evalStage(goal, floor) {
     if (remain <= 0) {
         return { key: 'overdue', name: '逾期收束', remain, percent: 100, ratio: 1 };
     }
-    const ratio = (floor - start) / span;
+    const raw = Math.max(0, Math.min(1, (floor - start) / span));
+    const exp = CURVE_EXP[cfg().curve] || 1;
+    const ratio = Math.pow(raw, exp);
     const stage = STAGE_TABLE.find((s) => ratio < s.limit) || STAGE_TABLE[STAGE_TABLE.length - 1];
-    const clamped = Math.max(0, Math.min(1, ratio));
+    const clamped = ratio;
     return {
         key: stage.key,
         name: stage.name,
@@ -1063,6 +1069,7 @@ function bindSettings() {
     bindValue('#pw-position', 'position');
     bindValue('#pw-depth', 'depth', 'number');
     bindValue('#pw-counting', 'counting');
+    bindValue('#pw-curve', 'curve');
     bindValue('#pw-floor-offset', 'floorOffset', 'number');
     bindValue('#pw-strictness', 'strictness');
     bindValue('#pw-defaultspan', 'defaultSpan', 'number');
