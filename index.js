@@ -816,6 +816,28 @@ function syncFormHints() {
     const suggestion = currentFloor() + Math.max(1, Number(cfg().defaultSpan) || 40);
     el.attr('placeholder', `例：${suggestion}`);
     if (!el.val()) el.attr('placeholder', `默认 ${suggestion}（当前楼 + ${cfg().defaultSpan}）`);
+    $('#pw-q-target').attr('placeholder', `目标楼（留空=当前楼+${cfg().defaultSpan}）`);
+    updateFloorHints();
+}
+
+/** 把「目标楼」换算成人话：第 N 楼 ≈ 大约几楼后。 */
+function describeTarget(cur, value, span) {
+    const target = Number(value);
+    if (!Number.isFinite(target) || target <= 0) return `留空 = 第 ${cur + span} 楼（约 ${span} 楼后）`;
+    const delta = target - cur;
+    if (delta === 0) return `第 ${target} 楼 = 就是现在`;
+    if (delta < 0) return `第 ${target} 楼 = 已经过去了 ${-delta} 楼`;
+    return `第 ${target} 楼 = 大约 ${delta} 楼后`;
+}
+
+/** 刷新两个面板里「当前楼层」与目标楼换算提示。 */
+function updateFloorHints() {
+    const cur = currentFloor();
+    const span = Math.max(1, Number(cfg().defaultSpan) || 40);
+    if ($('#pw-target-now').length) $('#pw-target-now').text(`当前楼层：${cur}`);
+    if ($('#pw-target-live').length) $('#pw-target-live').text(describeTarget(cur, $('#pw-target').val(), span));
+    if ($('#pw-q-floor').length) $('#pw-q-floor').text(`当前楼层：${cur}`);
+    if ($('#pw-q-live').length) $('#pw-q-live').text(describeTarget(cur, $('#pw-q-target').val(), span));
 }
 
 function resetForm() {
@@ -846,6 +868,7 @@ function fillForm(goal) {
     $('#pw-save span').text('保存修改');
     $('#pw-cancel-edit').show();
     $('#pw-add-box').attr('open', 'open');
+    updateFloorHints();
     document.querySelector('#pw-add-box')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
@@ -1046,8 +1069,31 @@ function bindSettings() {
 function bindUi() {
     $(document).on('click', '.pw-btn', function () {
         const action = this.dataset.action || '';
+        if (!action) return;
         if (action === 'delete') return; // 交给下面的二次确认处理
         handleAction(action, this.dataset.id || '');
+    });
+
+    // 目标楼输入：实时显示当前楼层与「大约几楼后」，并提供 当前+N / 就是现在 快捷填充
+    $(document).on('input', '#pw-target, #pw-q-target', function () {
+        updateFloorHints();
+    });
+    $(document).on('click', '[data-target-offset], [data-target-now]', function (e) {
+        e.preventDefault();
+        const forId = this.dataset.targetFor || 'pw-target';
+        const input = $('#' + forId);
+        if (!input.length) return;
+        const n = this.hasAttribute('data-target-now') ? 1 : (Number(this.dataset.targetOffset) || 10);
+        input.val(currentFloor() + n);
+        updateFloorHints();
+    });
+
+    // 展开「添加剧情目标」、窗口重新聚焦、打开快捷弹窗时都刷新一次楼层显示
+    $(document).on('click', '#pw-add-box > summary, #pw-goals-box > summary', function () {
+        updateFloorHints();
+    });
+    $(window).on('focus', function () {
+        updateFloorHints();
     });
 
     // 删除目标：点两次才生效（第一次变成"再点一次删除"，4 秒后自动还原），避免手滑
@@ -1382,6 +1428,16 @@ function ensureQuick() {
                     <input id="pw-q-target" class="text_pole pw-quick-input" type="number" min="1" placeholder="目标楼（留空=当前楼+40）" />
                     <input id="pw-q-keywords" class="text_pole pw-quick-input" type="text" placeholder="关键词，逗号分隔" />
                 </div>
+                <div class="pw-floor">
+                    <span id="pw-q-floor">当前楼层：0</span>
+                    <span id="pw-q-live"></span>
+                </div>
+                <div class="pw-floor-quick">
+                    <button type="button" class="pw-btn pw-btn-xs menu_button" data-target-offset="10" data-target-for="pw-q-target">当前+10</button>
+                    <button class="pw-btn pw-btn-xs menu_button" data-target-offset="20" data-target-for="pw-q-target">+20</button>
+                    <button class="pw-btn pw-btn-xs menu_button" data-target-offset="40" data-target-for="pw-q-target">+40</button>
+                    <button class="pw-btn pw-btn-xs menu_button" data-target-now data-target-for="pw-q-target">就是现在</button>
+                </div>
                 <textarea id="pw-q-desc" class="text_pole pw-quick-input" rows="2" placeholder="具体要发生什么（可选）"></textarea>
                 <div class="pw-quick-actions">
                     <button class="pw-btn menu_button" data-quick="add">加为目标</button>
@@ -1428,6 +1484,7 @@ function openQuick() {
     const box = $('#pw-quick');
     if (!box.length) return;
     renderQuickCurrent();
+    updateFloorHints();
     box.css('display', 'flex');
     setTimeout(() => $('#pw-q-title').trigger('focus'), 30);
 }

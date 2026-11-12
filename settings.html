@@ -2,7 +2,7 @@
     <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
             <b>伏笔导演</b>
-            <span class="pw-version">v0.2.4</span>
+            <span class="pw-version">v0.2.5</span>
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
@@ -44,6 +44,16 @@
                         <div class="pw-col">
                             <label for="pw-target">目标楼（消息数）</label>
                             <input type="number" id="pw-target" class="text_pole" min="1" step="1" />
+                            <div class="pw-floor">
+                                <span id="pw-target-now">当前楼层：0</span>
+                                <span id="pw-target-live"></span>
+                            </div>
+                            <div class="pw-floor-quick">
+                                <button type="button" class="pw-btn pw-btn-xs menu_button" data-target-offset="10" data-target-for="pw-target">当前+10</button>
+                                <button type="button" class="pw-btn pw-btn-xs menu_button" data-target-offset="20" data-target-for="pw-target">+20</button>
+                                <button type="button" class="pw-btn pw-btn-xs menu_button" data-target-offset="40" data-target-for="pw-target">+40</button>
+                                <button type="button" class="pw-btn pw-btn-xs menu_button" data-target-now data-target-for="pw-target">就是现在</button>
+                            </div>
                         </div>
                         <div class="pw-col">
                             <label for="pw-keywords">关键词（逗号分隔，用于伏笔扫描）</label>
