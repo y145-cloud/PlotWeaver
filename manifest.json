@@ -1,0 +1,12 @@
+{
+    "display_name": "伏笔导演 Plot Weaver",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "y145-cloud",
+    "version": "0.2.0",
+    "homePage": "https://github.com/y145-cloud/PlotWeaver",
+    "description": "Long-range plot point scheduler: input an outline or a must-happen future beat, the model gradually foreshadows it over dozens or hundreds of messages instead of resolving it next turn."
+}

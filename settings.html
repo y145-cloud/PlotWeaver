@@ -1,0 +1,160 @@
+<div class="plot-weaver-settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>伏笔导演</b>
+            <span class="pw-version">v0.1.0</span>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+
+            <label class="checkbox_label">
+                <input type="checkbox" id="pw-enabled" />
+                <span>启用长期剧情导演（每楼自动注入节奏约束）</span>
+            </label>
+            <label class="checkbox_label">
+                <input type="checkbox" id="pw-hud" />
+                <span>在聊天界面显示悬浮进度条</span>
+            </label>
+            <div class="pw-hint">
+                目标与进度保存在「当前聊天」的元数据里，换聊天互不影响；
+                注入内容每一楼重新生成，所以能撑几十到上百楼，不依赖任何“只对最近几楼生效”的正则。
+            </div>
+
+            <div id="pw-current" class="pw-current"></div>
+
+            <details class="pw-details" id="pw-goals-box">
+                <summary>全部目标 <span id="pw-goals-count" class="pw-badge">0</span></summary>
+                <div id="pw-goals" class="pw-goals"></div>
+            </details>
+
+            <details class="pw-details" id="pw-add-box">
+                <summary id="pw-form-title">添加剧情目标</summary>
+                <div class="pw-form">
+                    <label for="pw-title">标题</label>
+                    <input type="text" id="pw-title" class="text_pole" placeholder="例：主角发现父亲的秘密" />
+
+                    <label for="pw-desc">具体说明（会逐字交给 AI）</label>
+                    <textarea id="pw-desc" class="text_pole" rows="3" placeholder="例：在旧宅地下室找到父亲的日记，发现他与旧案有关"></textarea>
+
+                    <div class="pw-row">
+                        <div class="pw-col">
+                            <label for="pw-target">目标楼（消息数）</label>
+                            <input type="number" id="pw-target" class="text_pole" min="1" step="1" />
+                        </div>
+                        <div class="pw-col">
+                            <label for="pw-keywords">关键词（逗号分隔，用于伏笔扫描）</label>
+                            <input type="text" id="pw-keywords" class="text_pole" placeholder="日记,地下室,旧案" />
+                        </div>
+                    </div>
+
+                    <label for="pw-must">必须包含的要素（一行一条，可空）</label>
+                    <textarea id="pw-must" class="text_pole" rows="2" placeholder="父亲书房里的老照片"></textarea>
+
+                    <label for="pw-avoid">禁止事项（一行一条，可空）</label>
+                    <textarea id="pw-avoid" class="text_pole" rows="2" placeholder="不要让父亲当场出现"></textarea>
+
+                    <label for="pw-notes">已铺垫记录（可空，作者手记，会注入以保持连贯）</label>
+                    <textarea id="pw-notes" class="text_pole" rows="2" placeholder="第 12 楼：母亲提到父亲最近常去地下室"></textarea>
+
+                    <div class="pw-row pw-actions">
+                        <div class="pw-btn pw-btn-primary" id="pw-save" data-action="save"><i class="fa-solid fa-plus"></i><span>添加目标</span></div>
+                        <div class="pw-btn" id="pw-cancel-edit" data-action="cancel-edit" style="display:none;">取消编辑</div>
+                    </div>
+                </div>
+            </details>
+
+            <details class="pw-details">
+                <summary>大纲导入（一行一个剧情点，自动分配楼层）</summary>
+                <div class="pw-form">
+                    <textarea id="pw-outline" class="text_pole" rows="6" placeholder="第一行：第一个必须发生的剧情点&#10;第二行：第二个必须发生的剧情点&#10;……"></textarea>
+                    <div class="pw-row">
+                        <div class="pw-col">
+                            <label for="pw-outline-gap">每个剧情点间隔（楼）</label>
+                            <input type="number" id="pw-outline-gap" class="text_pole" min="1" step="1" value="25" />
+                        </div>
+                    </div>
+                    <div class="pw-btn pw-btn-primary" id="pw-outline-build" data-action="outline"><i class="fa-solid fa-list-ol"></i><span>按大纲生成目标</span></div>
+                </div>
+            </details>
+
+            <details class="pw-details">
+                <summary>节奏与注入设置</summary>
+                <div class="pw-form">
+                    <div class="pw-row">
+                        <div class="pw-col">
+                            <label for="pw-position">注入位置</label>
+                            <select id="pw-position" class="text_pole">
+                                <option value="in_chat">对话中（推荐）</option>
+                                <option value="in_prompt">系统提示词</option>
+                            </select>
+                        </div>
+                        <div class="pw-col">
+                            <label for="pw-depth">注入深度（越小越靠后、越强势）</label>
+                            <input type="number" id="pw-depth" class="text_pole" min="0" max="100" step="1" />
+                        </div>
+                    </div>
+                    <div class="pw-row">
+                        <div class="pw-col">
+                            <label for="pw-counting">楼层计数方式</label>
+                            <select id="pw-counting" class="text_pole">
+                                <option value="all">每条消息算一楼</option>
+                                <option value="round">一问一答算一楼</option>
+                                <option value="ai">只算 AI 回复</option>
+                            </select>
+                        </div>
+                        <div class="pw-col">
+                            <label for="pw-strictness">严格程度</label>
+                            <select id="pw-strictness" class="text_pole">
+                                <option value="soft">宽松（建议式）</option>
+                                <option value="normal">标准</option>
+                                <option value="hard">严格（强禁令）</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="pw-row">
+                        <div class="pw-col">
+                            <label for="pw-defaultspan">新目标默认跨度（楼）</label>
+                            <input type="number" id="pw-defaultspan" class="text_pole" min="1" step="1" />
+                        </div>
+                        <div class="pw-col pw-col-check">
+                            <label class="checkbox_label">
+                                <input type="checkbox" id="pw-hint-next" />
+                                <span>注入下一个目标的模糊提示</span>
+                            </label>
+                            <label class="checkbox_label">
+                                <input type="checkbox" id="pw-seeds" />
+                                <span>扫描关键词，记录已埋伏笔</span>
+                            </label>
+                            <label class="checkbox_label">
+                                <input type="checkbox" id="pw-earlywarn" />
+                                <span>疑似提前触发时提醒</span>
+                            </label>
+                        </div>
+                    </div>
+                    <label for="pw-extra">附加要求（原样追加到注入内容，可空）</label>
+                    <textarea id="pw-extra" class="text_pole" rows="2" placeholder="例：整体文风保持冷硬，少用比喻"></textarea>
+                </div>
+            </details>
+
+            <details class="pw-details">
+                <summary>当前注入内容（预览）</summary>
+                <pre id="pw-preview" class="pw-pre"></pre>
+            </details>
+
+            <details class="pw-details">
+                <summary>导入 / 导出（JSON，用于备份本聊天的目标）</summary>
+                <div class="pw-form">
+                    <textarea id="pw-json" class="text_pole" rows="4" placeholder="点“导出”把当前聊天的目标写到这里；粘贴 JSON 后点“导入”覆盖。"></textarea>
+                    <div class="pw-row pw-actions">
+                        <div class="pw-btn" id="pw-export" data-action="export">导出</div>
+                        <div class="pw-btn" id="pw-import" data-action="import">导入</div>
+                    </div>
+                </div>
+            </details>
+
+            <div class="pw-hint pw-hint-bottom">
+                斜杠命令：/plot status · /plot add 标题 | 楼层 · /plot next · /plot done · /plot delay 楼数 · /plot now
+            </div>
+        </div>
+    </div>
+</div>
