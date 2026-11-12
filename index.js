@@ -514,6 +514,7 @@ function renderGoals() {
         actions.push(`<button class="pw-btn pw-btn-xs" data-action="edit" data-id="${esc(g.id)}">编辑</button>`);
         if (g.status !== 'done') actions.push(`<button class="pw-btn pw-btn-xs" data-action="done" data-id="${esc(g.id)}">完成</button>`);
         actions.push(`<button class="pw-btn pw-btn-xs" data-action="archive" data-id="${esc(g.id)}">归档</button>`);
+        actions.push(`<button class="pw-btn pw-btn-xs pw-btn-danger" data-action="delete" data-id="${esc(g.id)}">删除</button>`);
 
         return `
             <div class="pw-goal ${isCurrent ? 'pw-goal-current' : ''}">
@@ -532,7 +533,10 @@ function renderGoals() {
             <div class="pw-goal pw-goal-archived">
                 <div class="pw-goal-main"><div class="pw-goal-title">${esc(g.title)}</div>
                 <div class="pw-goal-meta">第 ${g.targetFloor} 楼</div></div>
-                <div class="pw-goal-actions"><button class="pw-btn pw-btn-xs" data-action="restore" data-id="${esc(g.id)}">恢复</button></div>
+                <div class="pw-goal-actions">
+                    <button class="pw-btn pw-btn-xs" data-action="restore" data-id="${esc(g.id)}">恢复</button>
+                    <button class="pw-btn pw-btn-xs pw-btn-danger" data-action="delete" data-id="${esc(g.id)}">删除</button>
+                </div>
             </div>`).join('');
         html += '</details>';
     }
@@ -839,7 +843,31 @@ function bindSettings() {
 
 function bindUi() {
     $(document).on('click', '.pw-btn', function () {
-        handleAction(this.dataset.action || '', this.dataset.id || '');
+        const action = this.dataset.action || '';
+        if (action === 'delete') return; // 交给下面的二次确认处理
+        handleAction(action, this.dataset.id || '');
+    });
+
+    // 删除目标：点两次才生效（第一次变成"再点一次删除"，4 秒后自动还原），避免手滑
+    $(document).on('click', '.pw-btn[data-action="delete"]', function () {
+        const btn = this;
+        const label = btn.dataset.label || '删除';
+        if (btn.dataset.armed === '1') {
+            clearTimeout(Number(btn.dataset.timer || 0));
+            handleAction('delete', btn.dataset.id || '');
+            return;
+        }
+        btn.dataset.label = label;
+        btn.dataset.armed = '1';
+        btn.classList.add('pw-btn-armed');
+        btn.textContent = '再点一次删除';
+        btn.dataset.timer = String(
+            setTimeout(() => {
+                btn.dataset.armed = '';
+                btn.classList.remove('pw-btn-armed');
+                btn.textContent = btn.dataset.label || '删除';
+            }, 4000),
+        );
     });
 
     $(document).on('click', '#pw-hud-bar .pw-hud-head', () => {
@@ -906,6 +934,21 @@ function handleAction(action, id) {
         case 'edit':
             fillForm(goal);
             return;
+        case 'delete': {
+            const idx = st.goals.findIndex((g) => g.id === goal.id);
+            if (idx < 0) return;
+            st.goals.splice(idx, 1);
+            if (st.activeId === goal.id) {
+                const next = st.goals
+                    .filter((g) => g.status === 'active')
+                    .sort((a, b) => (Number(a.targetFloor) || 0) - (Number(b.targetFloor) || 0))[0];
+                st.activeId = next ? next.id : null;
+            }
+            persist();
+            refresh();
+            toast(`已删除目标「${goal.title}」`, 'success');
+            return;
+        }
         default:
             return;
     }
@@ -980,8 +1023,17 @@ function registerSlash() {
                 case 'add': {
                     const st = state();
                     if (!st) return '还没有打开聊天。';
-                    const [title, floors] = rest.split('|').map((x) => x.trim());
-                    if (!title) return '用法：/plot add 标题 | 楼层数';
+                    // 支持 /plot add 标题 30、/plot add 标题|30、标题=30、标题@30 几种写法。
+                    // 注意：ST 的斜杠命令里 "|" 是管道符，会被解析器截走，所以不要只依赖它。
+                    const raw = rest.trim();
+                    let title = raw;
+                    let floors = '';
+                    const m = raw.match(/^(.*?)\s*(?:[|｜=:：@]\s*(\d+))\s*$/s) || raw.match(/^(.*?)\s+(\d+)\s*$/s);
+                    if (m) {
+                        title = m[1].trim();
+                        floors = m[2];
+                    }
+                    if (!title) return '用法：/plot add 标题 [楼数]';
                     const cur = currentFloor();
                     const span = Number(floors) > 0 ? Number(floors) : Math.max(1, Number(cfg().defaultSpan) || 40);
                     const goal = normalizeGoal({ title, desc: title, startFloor: cur, targetFloor: cur + span, status: 'active' });
@@ -989,7 +1041,7 @@ function registerSlash() {
                     if (!st.activeId) st.activeId = goal.id;
                     persist();
                     refresh();
-                    return `已添加目标「${goal.title}」，目标第 ${goal.targetFloor} 楼。`;
+                    return `已添加目标「${goal.title}」，目标第 ${goal.targetFloor} 楼（约 ${span} 楼后）。`;
                 }
                 case 'next': {
                     const st = state();
@@ -1028,8 +1080,36 @@ function registerSlash() {
                     refresh();
                     return `「${goal.title}」已调整为立即触发。`;
                 }
+                case 'del':
+                case 'delete':
+                case 'rm': {
+                    const st = state();
+                    if (!st || !st.goals.length) return '当前聊天还没有任何目标。';
+                    let target = null;
+                    if (!rest) {
+                        target = currentGoal(st);
+                    } else {
+                        const n = Number(rest);
+                        if (Number.isInteger(n) && n >= 1 && n <= st.goals.length) {
+                            target = st.goals[n - 1];
+                        } else {
+                            target = st.goals.find((g) => g.title === rest) || st.goals.find((g) => g.title.includes(rest));
+                        }
+                    }
+                    if (!target) return `没有找到目标「${rest}」，用 /plot status 查看编号。`;
+                    st.goals = st.goals.filter((g) => g.id !== target.id);
+                    if (st.activeId === target.id) {
+                        const next = st.goals
+                            .filter((g) => g.status === 'active')
+                            .sort((a, b) => (Number(a.targetFloor) || 0) - (Number(b.targetFloor) || 0))[0];
+                        st.activeId = next ? next.id : null;
+                    }
+                    persist();
+                    refresh();
+                    return `已删除目标「${target.title}」。`;
+                }
                 default:
-                    return '可用：status / add 标题 | 楼层 / next / done / delay 楼数 / now';
+                    return '可用：status / add 标题 | 楼层 / next / done / delay 楼数 / now / del [标题或序号]';
             }
         };
 
@@ -1040,7 +1120,7 @@ function registerSlash() {
                 name: 'plot',
                 aliases: ['pw'],
                 callback,
-                helpString: '伏笔导演：/plot status · /plot add 标题 | 楼层 · /plot next · /plot done · /plot delay 楼数 · /plot now',
+                helpString: '伏笔导演：/plot status · /plot add 标题 [楼数] · /plot next · /plot done · /plot delay 楼数 · /plot now · /plot del [标题或序号]',
                 returns: '状态文本',
             }));
         }
@@ -1139,6 +1219,9 @@ function renderQuickCurrent() {
             </div>
             <div class="pw-bar"><div class="pw-bar-fill pw-fill-${ev.key}" style="width:${ev.percent}%"></div></div>
             <div class="pw-meta">第 ${floor} 楼 / 目标 ${goal.targetFloor} 楼 · ${remainText} · ${ev.percent}%</div>
+            <div class="pw-row" style="margin-top:6px;">
+                <button class="pw-btn pw-btn-xs pw-btn-danger" data-action="delete" data-id="${esc(goal.id)}">删除该目标</button>
+            </div>
         </div>`);
 }
 

@@ -148,6 +148,24 @@
     border-radius: 6px;
 }
 
+/* 删除类按钮：默认低调，二次确认时高亮 */
+.pw-btn-danger {
+    border-color: rgba(200, 70, 70, 0.5);
+    color: #c25555;
+}
+
+.pw-btn-danger:hover {
+    background: rgba(200, 70, 70, 0.14);
+    border-color: #c25555;
+}
+
+.pw-btn-armed {
+    border-color: #c25555;
+    background: rgba(200, 70, 70, 0.22);
+    color: #d94b4b;
+    font-weight: 600;
+}
+
 .pw-row {
     display: flex;
     flex-wrap: wrap;
