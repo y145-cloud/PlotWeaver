@@ -36,6 +36,10 @@ const DEFAULT_SETTINGS = {
     enabled: true,
     hud: true,
     hudCollapsed: false,
+    hudSnap: true,
+    hudDock: null,
+    hudEdgeAt: 0.62,
+    hudPos: null,
     position: 'in_chat',
     depth: 4,
     counting: 'all',
@@ -543,6 +547,47 @@ function renderGoals() {
     el.html(html);
 }
 
+let hudPinned = false; // 贴边状态下点击钉住展开
+let hudDrag = null;
+
+/** 把悬浮条摆到该在的位置：自由定位，或贴着屏幕某条边。 */
+function placeHud() {
+    const hud = document.getElementById('pw-hud-bar');
+    if (!hud) return;
+    const dock = cfg().hudDock || '';
+    if (!dock) {
+        hud.style.transform = '';
+        const pos = cfg().hudPos;
+        if (pos && Number.isFinite(pos.left) && Number.isFinite(pos.top)) {
+            hud.style.left = Math.max(0, Math.min(window.innerWidth - 60, pos.left)) + 'px';
+            hud.style.top = Math.max(0, Math.min(window.innerHeight - 40, pos.top)) + 'px';
+            hud.style.right = 'auto';
+            hud.style.bottom = 'auto';
+        } else {
+            hud.style.left = '';
+            hud.style.top = '';
+            hud.style.right = '';
+            hud.style.bottom = '';
+        }
+        return;
+    }
+    const at = Math.min(0.95, Math.max(0.05, Number(cfg().hudEdgeAt) || 0.62));
+    const pct = (at * 100).toFixed(2) + '%';
+    hud.style.left = 'auto';
+    hud.style.top = 'auto';
+    hud.style.right = 'auto';
+    hud.style.bottom = 'auto';
+    if (dock === 'left' || dock === 'right') {
+        hud.style[dock === 'left' ? 'left' : 'right'] = '0px';
+        hud.style.top = pct;
+        hud.style.transform = 'translateY(-50%)';
+    } else {
+        hud.style[dock === 'top' ? 'top' : 'bottom'] = '0px';
+        hud.style.left = pct;
+        hud.style.transform = 'translateX(-50%)';
+    }
+}
+
 function renderHud() {
     const hud = $('#pw-hud-bar');
     if (!hud.length) return;
@@ -556,9 +601,15 @@ function renderHud() {
     const floor = currentFloor();
     const ev = evalStage(goal, floor);
     const collapsed = !!s.hudCollapsed;
-    hud.show().toggleClass('pw-hud-collapsed', collapsed);
+    const dock = s.hudDock || '';
+    hud.show()
+        .toggleClass('pw-hud-collapsed', collapsed)
+        .toggleClass('pw-hud-docked', !!dock)
+        .removeClass('pw-dock-left pw-dock-right pw-dock-top pw-dock-bottom')
+        .toggleClass('pw-hud-open', !!dock && hudPinned);
+    if (dock) hud.addClass('pw-dock-' + dock);
     hud.html(`
-        <div class="pw-hud-head" title="点击折叠/展开">
+        <div class="pw-hud-head" title="按住可拖动；拖到屏幕边缘会自动收进去">
             <span class="pw-hud-name">${esc(clip(goal.title, 16))}</span>
             <span class="pw-hud-num">${ev.remain > 0 ? `剩 ${ev.remain}` : '到期'}</span>
             <span class="pw-hud-fold">${collapsed ? '▸' : '▾'}</span>
@@ -570,8 +621,158 @@ function renderHud() {
                 <button class="pw-btn pw-btn-xs" data-action="now" data-id="${esc(goal.id)}">立即</button>
                 <button class="pw-btn pw-btn-xs" data-action="delay" data-id="${esc(goal.id)}">+10</button>
                 <button class="pw-btn pw-btn-xs" data-action="done" data-id="${esc(goal.id)}">完成</button>
+                ${dock ? '<button class="pw-btn pw-btn-xs" data-hud="undock">浮窗</button>' : ''}
             </div>
+        </div>
+        <div class="pw-hud-tab" title="点击展开；拖出来可以恢复成浮窗">
+            <div class="pw-hud-tab-fill pw-fill-${ev.key}" style="--pw-pct:${ev.percent}%"></div>
         </div>`);
+    placeHud();
+}
+
+/** 悬浮条拖动 + 贴边收纳 + 点击展开。 */
+function bindHud() {
+    const el = () => document.getElementById('pw-hud-bar');
+
+    $(document).on('pointerdown', '#pw-hud-bar .pw-hud-head, #pw-hud-bar .pw-hud-tab', function (e) {
+        if (e.button !== 0 && e.pointerType !== 'touch') return;
+        const hud = el();
+        if (!hud) return;
+        const r = hud.getBoundingClientRect();
+        hudDrag = {
+            id: e.pointerId === undefined ? null : e.pointerId,
+            sx: e.clientX,
+            sy: e.clientY,
+            ox: e.clientX - r.left,
+            oy: e.clientY - r.top,
+            moved: false,
+            prev: {
+                dock: cfg().hudDock,
+                edgeAt: cfg().hudEdgeAt,
+                pos: cfg().hudPos ? { left: cfg().hudPos.left, top: cfg().hudPos.top } : null,
+            },
+        };
+        try { hud.setPointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+        e.preventDefault();
+    });
+
+    $(document).on('pointermove', function (e) {
+        if (!hudDrag) return;
+        if (hudDrag.id !== null && e.pointerId !== hudDrag.id) return;
+        const dx = e.clientX - hudDrag.sx;
+        const dy = e.clientY - hudDrag.sy;
+        if (!hudDrag.moved && Math.hypot(dx, dy) < 5) return;
+        const hud = el();
+        if (!hud) return;
+        if (!hudDrag.moved) {
+            hudDrag.moved = true;
+            hudPinned = false;
+            hud.classList.add('pw-hud-dragging');
+            if (cfg().hudDock) {
+                cfg().hudDock = null;
+                cfg().hudPos = null;
+                hud.classList.remove(
+                    'pw-hud-docked', 'pw-hud-open',
+                    'pw-dock-left', 'pw-dock-right', 'pw-dock-top', 'pw-dock-bottom',
+                );
+            }
+        }
+        const left = Math.max(0, Math.min(window.innerWidth - 60, e.clientX - hudDrag.ox));
+        const top = Math.max(0, Math.min(window.innerHeight - 40, e.clientY - hudDrag.oy));
+        hud.style.left = left + 'px';
+        hud.style.top = top + 'px';
+        hud.style.right = 'auto';
+        hud.style.bottom = 'auto';
+        hud.style.transform = 'none';
+    });
+
+    $(document).on('pointerup pointercancel', function (e) {
+        if (!hudDrag) return;
+        if (hudDrag.id !== null && e.pointerId !== hudDrag.id) return;
+        const drag = hudDrag;
+        hudDrag = null;
+        const hud = el();
+        if (!hud) return;
+        hud.classList.remove('pw-hud-dragging');
+        try { hud.releasePointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+
+        if (!drag.moved) {
+            // 视为点击
+            if (cfg().hudDock) {
+                hudPinned = !hudPinned;
+                hud.classList.toggle('pw-hud-open', hudPinned);
+            } else {
+                cfg().hudCollapsed = !cfg().hudCollapsed;
+                saveSettingsDebounced();
+                renderHud();
+            }
+            return;
+        }
+
+        const r = hud.getBoundingClientRect();
+        const snap = 26;
+        let dock = '';
+        if (cfg().hudSnap !== false) {
+            if (r.left <= snap) dock = 'left';
+            else if (window.innerWidth - r.right <= snap) dock = 'right';
+            else if (r.top <= snap) dock = 'top';
+            else if (window.innerHeight - r.bottom <= snap) dock = 'bottom';
+        }
+        if (dock) {
+            cfg().hudDock = dock;
+            cfg().hudEdgeAt = dock === 'left' || dock === 'right'
+                ? (r.top + r.height / 2) / window.innerHeight
+                : (r.left + r.width / 2) / window.innerWidth;
+            cfg().hudPos = null;
+            hudPinned = false;
+        } else {
+            cfg().hudDock = null;
+            cfg().hudPos = { left: r.left, top: r.top };
+        }
+        saveSettingsDebounced();
+        renderHud();
+    });
+
+    // 兜底：指针在窗口外松开 / 页面失焦时清掉拖动状态，避免卡在“拖动中”
+    const cancelDrag = () => {
+        if (!hudDrag) return;
+        const prev = hudDrag.prev;
+        hudDrag = null;
+        const hud = el();
+        if (hud) hud.classList.remove('pw-hud-dragging');
+        if (prev) {
+            cfg().hudDock = prev.dock;
+            cfg().hudEdgeAt = prev.edgeAt;
+            cfg().hudPos = prev.pos;
+        }
+        renderHud();
+    };
+    $(window).on('blur', cancelDrag);
+    $(document).on('visibilitychange', function () { if (document.hidden) cancelDrag(); });
+    $(document).on('keydown', function (e) { if (e.key === 'Escape') cancelDrag(); });
+
+    // 贴边小条：鼠标移上去临时展开，移开收回（钉住时保持）
+    $(document).on('mouseenter', '#pw-hud-bar.pw-hud-docked', function () {
+        if (!hudPinned) this.classList.add('pw-hud-open');
+    });
+    $(document).on('mouseleave', '#pw-hud-bar.pw-hud-docked', function () {
+        if (!hudPinned) this.classList.remove('pw-hud-open');
+    });
+
+    // 从贴边状态恢复成浮窗
+    $(document).on('click', '#pw-hud-bar [data-hud="undock"]', function () {
+        const hud = el();
+        const r = hud ? hud.getBoundingClientRect() : null;
+        cfg().hudDock = null;
+        cfg().hudPos = r ? { left: Math.max(4, r.left), top: Math.max(4, r.top) } : null;
+        hudPinned = false;
+        saveSettingsDebounced();
+        renderHud();
+    });
+
+    $(window).on('resize', () => {
+        if (!hudDrag) placeHud();
+    });
 }
 
 /* ================================================================== */
@@ -829,6 +1030,7 @@ function bindSettings() {
     $('#pw-enabled').prop('checked', !!cfg().enabled);
     bindToggle('#pw-enabled', 'enabled');
     bindToggle('#pw-hud', 'hud');
+    bindToggle('#pw-hud-snap', 'hudSnap');
     bindToggle('#pw-hint-next', 'hintNext');
     bindToggle('#pw-seeds', 'scanSeeds');
     bindToggle('#pw-earlywarn', 'earlyWarn');
@@ -870,11 +1072,7 @@ function bindUi() {
         );
     });
 
-    $(document).on('click', '#pw-hud-bar .pw-hud-head', () => {
-        cfg().hudCollapsed = !cfg().hudCollapsed;
-        saveSettingsDebounced();
-        renderHud();
-    });
+    bindHud();
 }
 
 function handleAction(action, id) {

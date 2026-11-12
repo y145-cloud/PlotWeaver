@@ -515,3 +515,127 @@
     padding: 6px 12px;
     font-size: 0.9em;
 }
+
+/* ---------- 悬浮条：拖动与贴边收纳 ---------- */
+
+.pw-hud {
+    transition: width 0.18s ease, height 0.18s ease, opacity 0.18s ease, box-shadow 0.18s ease;
+    touch-action: none;
+}
+
+.pw-hud-dragging {
+    transition: none !important;
+    opacity: 0.92;
+}
+
+.pw-hud-docked {
+    cursor: pointer;
+}
+
+.pw-hud-docked:not(.pw-hud-open) {
+    width: 11px !important;
+    height: 116px !important;
+    padding: 0 !important;
+    border-radius: 8px !important;
+    overflow: hidden;
+    background: rgba(20, 20, 20, 0.55) !important;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    opacity: 0.78;
+}
+
+.pw-hud-docked:not(.pw-hud-open):hover {
+    opacity: 1;
+}
+
+.pw-hud-docked:not(.pw-hud-open) .pw-hud-head,
+.pw-hud-docked:not(.pw-hud-open) .pw-hud-body {
+    display: none;
+}
+
+.pw-hud-tab {
+    display: none;
+}
+
+.pw-hud-docked:not(.pw-hud-open) .pw-hud-tab {
+    display: block;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    overflow: hidden;
+    background: rgba(128, 128, 128, 0.18);
+}
+
+.pw-hud-tab-fill {
+    position: absolute;
+    transition: height 0.3s ease, width 0.3s ease;
+}
+
+.pw-dock-left .pw-hud-tab-fill,
+.pw-dock-right .pw-hud-tab-fill {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--pw-pct, 0%);
+}
+
+.pw-dock-top .pw-hud-tab-fill,
+.pw-dock-bottom .pw-hud-tab-fill {
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--pw-pct, 0%);
+}
+
+.pw-hud-docked.pw-dock-top:not(.pw-hud-open),
+.pw-hud-docked.pw-dock-bottom:not(.pw-hud-open) {
+    width: 116px !important;
+    height: 11px !important;
+}
+
+.pw-dock-left {
+    left: 0 !important;
+    right: auto !important;
+    transform: translateY(-50%);
+    border-radius: 0 10px 10px 0 !important;
+}
+
+.pw-dock-right {
+    right: 0 !important;
+    left: auto !important;
+    transform: translateY(-50%);
+    border-radius: 10px 0 0 10px !important;
+}
+
+.pw-dock-top {
+    top: 0 !important;
+    bottom: auto !important;
+    transform: translateX(-50%);
+    border-radius: 0 0 10px 10px !important;
+}
+
+.pw-dock-bottom {
+    bottom: 0 !important;
+    top: auto !important;
+    transform: translateX(-50%);
+    border-radius: 10px 10px 0 0 !important;
+}
+
+.pw-hud-docked.pw-hud-open {
+    width: 236px !important;
+    height: auto !important;
+    opacity: 1;
+    overflow: hidden;
+    border-radius: 10px !important;
+}
+
+.pw-hud-docked.pw-hud-open .pw-hud-head {
+    display: flex;
+}
+
+.pw-hud-docked.pw-hud-open .pw-hud-body {
+    display: block;
+}
+
+.pw-hud-docked.pw-hud-open .pw-hud-tab {
+    display: none;
+}
