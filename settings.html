@@ -2,7 +2,7 @@
     <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
             <b>伏笔导演</b>
-            <span class="pw-version">v0.2.7</span>
+            <span class="pw-version">v0.2.8</span>
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
@@ -148,6 +148,13 @@
                             <label for="pw-defaultspan">新目标默认跨度（楼）</label>
                             <input type="number" id="pw-defaultspan" class="text_pole" min="1" step="1" />
                         </div>
+                        <div class="pw-col">
+                            <label for="pw-max-active">同时推进几条线</label>
+                            <input type="number" id="pw-max-active" class="text_pole" min="1" max="8" step="1" />
+                            <div class="pw-hint">每楼最多把几条进行中的目标写进提示词：「当前」那条优先，其余按目标楼层从近到远，默认 3。</div>
+                        </div>
+                    </div>
+                    <div class="pw-row">
                         <div class="pw-col pw-col-check">
                             <label class="checkbox_label">
                                 <input type="checkbox" id="pw-hint-next" />

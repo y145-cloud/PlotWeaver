@@ -667,3 +667,38 @@
 .pw-hud-docked.pw-hud-open .pw-hud-tab {
     display: none;
 }
+
+/* 多目标：悬浮条里的多条线 */
+.pw-hud-item {
+    margin-bottom: 4px;
+}
+
+.pw-hud-item-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 0.78em;
+    line-height: 1.25;
+    margin-bottom: 2px;
+}
+
+.pw-hud-item-name {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pw-hud-item-meta {
+    opacity: 0.75;
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
+
+/* 多目标：面板与快捷弹窗里的提示行 */
+.pw-multi-hint {
+    font-size: 0.82em;
+    opacity: 0.7;
+    margin: 2px 0 6px;
+}

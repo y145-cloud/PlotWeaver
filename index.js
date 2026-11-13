@@ -52,6 +52,7 @@ const DEFAULT_SETTINGS = {
     earlyWarn: true,
     extra: '',
     defaultSpan: 40,
+    maxActive: 3,
 };
 
 /* 阶段曲线：把“已走比例”压成“阶段进度”，让前半段几乎不动 */
@@ -266,6 +267,19 @@ function currentGoal(st) {
     return pinned || list[0];
 }
 
+/**
+ * 本楼真正参与注入的目标：被点名为「当前」的排第一，其余按目标楼层从近到远，
+ * 最多 maxActive 条（默认 3 条），这样几条线可以同时推进，又不会把提示词撑爆。
+ */
+function injectedGoals(st) {
+    const list = activeGoals(st);
+    if (!list.length) return [];
+    const max = Math.max(1, Math.min(8, Number(cfg().maxActive) || 3));
+    const pinned = list.find((g) => g.id === st.activeId);
+    const head = pinned ? [pinned, ...list.filter((g) => g.id !== pinned.id)] : list;
+    return head.slice(0, max);
+}
+
 function nextGoal(st, goal) {
     if (!st || !goal) return null;
     const list = activeGoals(st).filter((g) => g.id !== goal.id && (g.targetFloor || 0) > (goal.targetFloor || 0));
@@ -306,50 +320,69 @@ function buildInjection() {
     const s = cfg();
     if (!s.enabled) return '';
     const st = state();
-    const goal = currentGoal(st);
-    if (!goal) return '';
+    const goals = injectedGoals(st);
+    if (!goals.length) return '';
 
     const floor = currentFloor();
-    const ev = evalStage(goal, floor);
-    const strict = STAGE_TEXT[ev.key] || STAGE_TEXT.trigger;
-    const guidance = strict[s.strictness] || strict.normal;
-
+    const multi = goals.length > 1;
     const out = [];
     out.push('【伏笔导演｜长期剧情目标】');
-    out.push('下面是一个计划在很后面才发生的剧情目标。它只说明“这件事存在、大概在哪一楼”，不代表要围绕它安排剧情。');
-    out.push(`目标：${goal.title}`);
-    if (goal.desc && goal.desc !== goal.title) out.push(`要点：${clip(goal.desc, 300)}`);
-    const where = ev.remain > 0
-        ? `目标第 ${goal.targetFloor} 楼（当前第 ${floor} 楼）`
-        : `目标第 ${goal.targetFloor} 楼（当前第 ${floor} 楼，已过）`;
-    out.push(`位置：${where}｜阶段：${ev.name}`);
-    out.push(guidance);
-    out.push('与它无关的楼层是常态：可以连续多楼完全不提它。与它相关的角色不因为“该铺垫了”而登场，只有场景本来需要时才出现。');
+    if (!multi) {
+        out.push('下面是一个计划在很后面才发生的剧情目标。它只说明“这件事存在、大概在哪一楼”，不代表要围绕它安排剧情。');
+    } else {
+        out.push(`下面是 ${goals.length} 个计划在很后面才发生的剧情目标。它们只说明“这些事存在、大概在哪一楼”，不代表要围绕它们安排剧情。`);
+        out.push('它们是并行的几条线：同一楼可以只碰其中一条，也可以一条都不碰。不要让它们在同一楼挤在一起交代，也不需要每条线都推进。');
+    }
 
-    if (goal.must.length) {
-        out.push(`必须包含：${goal.must.slice(0, 6).map((x) => clip(x, 60)).join('；')}`);
-    }
-    if (goal.avoid.length) {
-        out.push(`禁止：${goal.avoid.slice(0, 6).map((x) => clip(x, 60)).join('；')}`);
-    }
-    if (goal.notes) {
-        out.push(`已铺垫（作者记录，务必衔接）：${clip(goal.notes, 300)}`);
-    }
-    const seeds = mergeSeeds(goal);
-    if (seeds.length) {
-        out.push(`已出现过的相关片段（不要重复，也不要与之矛盾）：${seeds.join('；')}`);
-    }
-    const nxt = nextGoal(st, goal);
-    if (s.hintNext && nxt) {
-        out.push(`更远的目标（只在场景自然允许时极轻地带一笔，不要专门提起）：${clip(nxt.title, 60)}`);
+    goals.forEach((goal, i) => {
+        const ev = evalStage(goal, floor);
+        const strict = STAGE_TEXT[ev.key] || STAGE_TEXT.trigger;
+        const guidance = strict[s.strictness] || strict.normal;
+        const where = ev.remain > 0
+            ? `目标第 ${goal.targetFloor} 楼（当前第 ${floor} 楼）`
+            : `目标第 ${goal.targetFloor} 楼（当前第 ${floor} 楼，已过）`;
+
+        if (i > 0) out.push('');
+        if (multi) out.push(`〔目标 ${i + 1}／${goals.length}〕`);
+        out.push(`目标：${goal.title}`);
+        if (goal.desc && goal.desc !== goal.title) out.push(`要点：${clip(goal.desc, multi ? 200 : 300)}`);
+        out.push(`位置：${where}｜阶段：${ev.name}`);
+        out.push(guidance);
+        out.push('与它无关的楼层是常态：可以连续多楼完全不提它。与它相关的角色不因为“该铺垫了”而登场，只有场景本来需要时才出现。');
+
+        if (goal.must.length) {
+            out.push(`必须包含：${goal.must.slice(0, multi ? 4 : 6).map((x) => clip(x, 60)).join('；')}`);
+        }
+        if (goal.avoid.length) {
+            out.push(`禁止：${goal.avoid.slice(0, multi ? 4 : 6).map((x) => clip(x, 60)).join('；')}`);
+        }
+        if (goal.notes) {
+            out.push(`已铺垫（作者记录，务必衔接）：${clip(goal.notes, multi ? 200 : 300)}`);
+        }
+        const seeds = mergeSeeds(goal);
+        if (seeds.length) {
+            out.push(`已出现过的相关片段（不要重复，也不要与之矛盾）：${seeds.join('；')}`);
+        }
+    });
+
+    if (s.hintNext) {
+        const injected = new Set(goals.map((g) => g.id));
+        const later = activeGoals(st).filter((g) => !injected.has(g.id));
+        if (later.length) {
+            const names = later.slice(0, 3).map((g) => clip(g.title, 40)).join('；');
+            out.push(`还有 ${later.length} 个更远的目标（这次不展开，只在场景自然允许时极轻地带一笔，不要专门提起）：${names}`);
+        }
     }
     if (s.extra) {
         out.push(`附加要求：${clip(s.extra, 400)}`);
     }
-    if (ev.key === 'trigger' || ev.key === 'overdue') {
+    if (goals.some((g) => {
+        const k = evalStage(g, floor).key;
+        return k === 'trigger' || k === 'overdue';
+    })) {
         out.push('写法：本楼写这件事本身，用已有的细节自然接上；不要输出提纲、编号、楼层或阶段说明，不要提及本提示。');
     } else {
-        out.push('写法：按当前场景正常书写；这件事最多作为场景里的背景痕迹出现。不要输出提纲、编号、楼层或阶段说明，不要提及本提示，不要用旁白预告后面会发生什么，也不在本楼收尾这件事。');
+        out.push('写法：按当前场景正常书写；这些事最多作为场景里的背景痕迹出现。不要输出提纲、编号、楼层或阶段说明，不要提及本提示，不要用旁白预告后面会发生什么，也不在本楼收尾这些事。');
     }
     return out.join('\n');
 }
@@ -474,17 +507,18 @@ function renderCurrent() {
         el.html('<div class="pw-empty">已关闭导演注入。</div>');
         return;
     }
-    const goal = currentGoal(st);
-    if (!goal) {
+    const goals = injectedGoals(st);
+    if (!goals.length) {
         el.html('<div class="pw-empty">当前聊天还没有目标剧情。在下面“添加剧情目标”里写一个，或用“大纲导入”粘贴大纲。</div>');
         return;
     }
 
     const floor = currentFloor();
-    const ev = evalStage(goal, floor);
-    const remainText = ev.remain > 0 ? `还剩 ${ev.remain} 楼` : `已超 ${-ev.remain} 楼`;
-    const desc = goal.desc ? `<div class="pw-desc">${esc(clip(goal.desc, 180))}</div>` : '';
-    const card = `
+    const cards = goals.map((goal) => {
+        const ev = evalStage(goal, floor);
+        const remainText = ev.remain > 0 ? `还剩 ${ev.remain} 楼` : `已超 ${-ev.remain} 楼`;
+        const desc = goal.desc && goal.desc !== goal.title ? `<div class="pw-desc">${esc(clip(goal.desc, 180))}</div>` : '';
+        return `
         <div class="pw-card">
             <div class="pw-card-head">
                 <span class="pw-card-title">${esc(goal.title)}</span>
@@ -500,7 +534,11 @@ function renderCurrent() {
                 <button class="pw-btn" data-action="done" data-id="${esc(goal.id)}">已完成</button>
             </div>
         </div>`;
-    el.html(card);
+    });
+    const head = goals.length > 1
+        ? `<div class="pw-multi-hint">本楼同时注入 ${goals.length} 条线（按“当前”优先，其余按目标楼层从近到远）</div>`
+        : '';
+    el.html(head + cards.join(''));
 }
 
 function renderGoals() {
@@ -602,15 +640,29 @@ function renderHud() {
     if (!hud.length) return;
     const s = cfg();
     const st = state();
-    const goal = currentGoal(st);
-    if (!s.enabled || !s.hud || !goal) {
+    const goals = injectedGoals(st);
+    if (!s.enabled || !s.hud || !goals.length) {
         hud.hide();
         return;
     }
     const floor = currentFloor();
-    const ev = evalStage(goal, floor);
+    const first = goals[0];
+    const ev = evalStage(first, floor);
     const collapsed = !!s.hudCollapsed;
     const dock = s.hudDock || '';
+    const nameText = goals.length > 1 ? `${clip(first.title, 12)} +${goals.length - 1}` : clip(first.title, 16);
+    const items = goals.map((goal) => {
+        const g = evalStage(goal, floor);
+        const meta = `${g.remain > 0 ? `剩 ${g.remain}` : '到期'} · ${g.name} · ${g.percent}%`;
+        return `
+            <div class="pw-hud-item">
+                <div class="pw-hud-item-top">
+                    <span class="pw-hud-item-name">${esc(clip(goal.title, 18))}</span>
+                    <span class="pw-hud-item-meta">${meta}</span>
+                </div>
+                <div class="pw-bar pw-bar-sm"><div class="pw-bar-fill pw-fill-${g.key}" style="width:${g.percent}%"></div></div>
+            </div>`;
+    }).join('');
     hud.show()
         .toggleClass('pw-hud-collapsed', collapsed)
         .toggleClass('pw-hud-docked', !!dock)
@@ -619,17 +671,17 @@ function renderHud() {
     if (dock) hud.addClass('pw-dock-' + dock);
     hud.html(`
         <div class="pw-hud-head" title="按住可拖动；拖到屏幕边缘会自动收进去">
-            <span class="pw-hud-name">${esc(clip(goal.title, 16))}</span>
+            <span class="pw-hud-name">${esc(nameText)}</span>
             <span class="pw-hud-num">${ev.remain > 0 ? `剩 ${ev.remain}` : '到期'}</span>
             <span class="pw-hud-fold">${collapsed ? '▸' : '▾'}</span>
         </div>
         <div class="pw-hud-body">
-            <div class="pw-bar pw-bar-sm"><div class="pw-bar-fill pw-fill-${ev.key}" style="width:${ev.percent}%"></div></div>
-            <div class="pw-hud-meta">第 ${floor} 楼 · ${ev.name} · ${ev.percent}%</div>
+            ${items}
+            <div class="pw-hud-meta">第 ${floor} 楼${goals.length > 1 ? ` · 并行 ${goals.length} 条` : ''}</div>
             <div class="pw-row pw-hud-actions">
-                <button class="pw-btn pw-btn-xs" data-action="now" data-id="${esc(goal.id)}">立即</button>
-                <button class="pw-btn pw-btn-xs" data-action="delay" data-id="${esc(goal.id)}">+10</button>
-                <button class="pw-btn pw-btn-xs" data-action="done" data-id="${esc(goal.id)}">完成</button>
+                <button class="pw-btn pw-btn-xs" data-action="now" data-id="${esc(first.id)}">立即</button>
+                <button class="pw-btn pw-btn-xs" data-action="delay" data-id="${esc(first.id)}">+10</button>
+                <button class="pw-btn pw-btn-xs" data-action="done" data-id="${esc(first.id)}">完成</button>
                 ${dock ? '<button class="pw-btn pw-btn-xs" data-hud="undock">浮窗</button>' : ''}
             </div>
         </div>
@@ -801,16 +853,21 @@ function refresh(options = {}) {
 
 function notifyStageChange() {
     const st = state();
-    const goal = currentGoal(st);
-    if (!goal) return;
-    const ev = evalStage(goal, currentFloor());
-    if (goal.lastStage && goal.lastStage !== ev.key) {
-        toast(`「${goal.title}」进入${ev.name}（${ev.remain > 0 ? `还剩 ${ev.remain} 楼` : '已到期'}）`, 'info');
-    }
-    if (goal.lastStage !== ev.key) {
-        goal.lastStage = ev.key;
-        persist();
-    }
+    const goals = injectedGoals(st);
+    if (!goals.length) return;
+    const floor = currentFloor();
+    let changed = false;
+    goals.forEach((goal) => {
+        const ev = evalStage(goal, floor);
+        if (goal.lastStage && goal.lastStage !== ev.key) {
+            toast(`「${goal.title}」进入${ev.name}（${ev.remain > 0 ? `还剩 ${ev.remain} 楼` : '已到期'}）`, 'info');
+        }
+        if (goal.lastStage !== ev.key) {
+            goal.lastStage = ev.key;
+            changed = true;
+        }
+    });
+    if (changed) persist();
 }
 
 /* ================================================================== */
@@ -1073,6 +1130,7 @@ function bindSettings() {
     bindValue('#pw-floor-offset', 'floorOffset', 'number');
     bindValue('#pw-strictness', 'strictness');
     bindValue('#pw-defaultspan', 'defaultSpan', 'number');
+    bindValue('#pw-max-active', 'maxActive', 'number');
     bindValue('#pw-extra', 'extra');
 }
 
@@ -1255,11 +1313,20 @@ function bindEvents() {
 
 function statusText() {
     const st = state();
-    const goal = currentGoal(st);
-    if (!goal) return '当前没有进行中的剧情目标。';
+    const goals = activeGoals(st);
+    if (!goals.length) return '当前没有进行中的剧情目标。';
     const floor = currentFloor();
-    const ev = evalStage(goal, floor);
-    return `「${goal.title}」第 ${floor} / ${goal.targetFloor} 楼，${ev.name}，${ev.remain > 0 ? `还剩 ${ev.remain} 楼` : `已超 ${-ev.remain} 楼`}（${ev.percent}%）`;
+    const injected = new Set(injectedGoals(st).map((g) => g.id));
+    const lines = goals.map((goal, i) => {
+        const ev = evalStage(goal, floor);
+        const mark = injected.has(goal.id) ? '★' : '·';
+        const where = ev.remain > 0 ? `还剩 ${ev.remain} 楼` : `已超 ${-ev.remain} 楼`;
+        return `${mark} ${i + 1}. 「${goal.title}」第 ${floor} / ${goal.targetFloor} 楼，${ev.name}，${where}（${ev.percent}%）`;
+    });
+    const head = goals.length > 1
+        ? `共 ${goals.length} 条进行中，本楼注入 ${injected.size} 条（★ 为正在注入，按目标楼层从近到远）：`
+        : '';
+    return [head, ...lines].filter(Boolean).join('\n');
 }
 
 function registerSlash() {
@@ -1475,6 +1542,10 @@ function renderQuickCurrent() {
     const floor = currentFloor();
     const ev = evalStage(goal, floor);
     const remainText = ev.remain > 0 ? `还剩 ${ev.remain} 楼` : `已超 ${-ev.remain} 楼`;
+    const others = activeGoals(st).filter((g) => g.id !== goal.id).length;
+    const otherLine = others > 0
+        ? `<div class="pw-multi-hint">另有 ${others} 条线在并行推进（完整面板里能看到全部）</div>`
+        : '';
     el.html(`
         <div class="pw-card">
             <div class="pw-card-head">
@@ -1486,7 +1557,7 @@ function renderQuickCurrent() {
             <div class="pw-row" style="margin-top:6px;">
                 <button class="pw-btn pw-btn-xs pw-btn-danger" data-action="delete" data-id="${esc(goal.id)}">删除该目标</button>
             </div>
-        </div>`);
+        </div>${otherLine}`);
 }
 
 function openQuick() {
